@@ -16,7 +16,23 @@ from .helpers import (
 
 
 class ResidualTemporalBlock(nn.Module):
+    """
+    Residual temporal block in the Temporal Unet model.
 
+    Args:
+        inp_channels (int): Number of input channels.
+        out_channels (int): Number of output channels.
+        embed_dim (int): Dimension of the embedding.
+        horizon (int): Length of the time horizon.
+        kernel_size (int): Size of the convolving kernel.
+
+    Forward Input:
+        x (torch.Tensor): Input tensor of shape (batch_size, inp_channels, horizon).
+        t (torch.Tensor): Input tensor of shape (batch_size, embed_dim).
+
+    Forward Output:
+        out (torch.Tensor): Output tensor of shape (batch_size, out_channels, horizon).
+    """
     def __init__(self, inp_channels, out_channels, embed_dim, horizon, kernel_size=5):
         super().__init__()
 
@@ -47,7 +63,25 @@ class ResidualTemporalBlock(nn.Module):
 
 
 class TemporalUnet(nn.Module):
+    """
+    Temporal Unet model for processing temporal sequences.
 
+    Args:
+        horizon (int): Length of the time horizon.
+        transition_dim (int): Dimension of the input tensor.
+        cond_dim (int): Dimension of the conditioning tensor.
+        dim (int): Dimensionality of the model features.
+        dim_mults (tuple): Multipliers for the different dimensions.
+        attention (bool): Whether to use the attention mechanism.
+
+    Forward Input:
+        x (torch.Tensor): Input tensor of shape (batch_size, horizon, transition_dim).
+        cond (torch.Tensor): Conditioning tensor.
+        time (torch.Tensor): Time tensor.
+
+    Forward Output:
+        x (torch.Tensor): Output tensor.
+    """
     def __init__(
         self,
         horizon,
@@ -147,7 +181,25 @@ class TemporalUnet(nn.Module):
 
 
 class ValueFunction(nn.Module):
+    """
+    Value function model for processing temporal sequences.
 
+    Args:
+        horizon (int): Length of the time horizon.
+        transition_dim (int): Dimension of the input tensor.
+        cond_dim (int): Dimension of the conditioning tensor.
+        dim (int): Dimensionality of the model features.
+        dim_mults (tuple): Multipliers for the different dimensions.
+        out_dim (int): Dimension of the output.
+
+    Forward Input:
+        x (torch.Tensor): Input tensor of shape (batch_size, horizon, transition_dim).
+        cond (torch.Tensor): Conditioning tensor.
+        time (torch.Tensor): Time tensor.
+
+    Forward Output:
+        out (torch.Tensor): Output tensor.
+    """
     def __init__(
         self,
         horizon,

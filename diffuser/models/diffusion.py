@@ -42,6 +42,28 @@ def make_timesteps(batch_size, i, device):
 
 
 class GaussianDiffusion(nn.Module):
+    """
+    Gaussian diffusion model for denoising and sampling from a probability distribution.
+
+    Args:
+        model (nn.Module): The diffusion model to be used.
+        horizon (int): The length of the diffusion chain.
+        observation_dim (int): The dimension of the observation space.
+        action_dim (int): The dimension of the action space.
+        n_timesteps (int): The number of diffusion steps.
+        loss_type (str): The type of loss function to be used.
+        clip_denoised (bool): Whether to clip denoised outputs.
+        predict_epsilon (bool): Whether the model predicts epsilon directly.
+        action_weight (float): Coefficient on first action loss.
+        loss_discount (float): Multiplier for the loss at each step.
+        loss_weights (dict): Loss coefficients for observation dimensions.
+
+    Forward Input:
+        cond (tuple): Conditions for diffusion sampling.
+
+    Forward Output:
+        Sample: Sampled trajectories and values.
+    """
     def __init__(self, model, horizon, observation_dim, action_dim, n_timesteps=1000,
         loss_type='l1', clip_denoised=False, predict_epsilon=True,
         action_weight=1.0, loss_discount=1.0, loss_weights=None,
@@ -233,6 +255,12 @@ class GaussianDiffusion(nn.Module):
 
 
 class ValueDiffusion(GaussianDiffusion):
+    """
+    Value diffusion model for denoising and sampling from a probability distribution.
+
+    Args:
+        (inherits arguments from GaussianDiffusion)
+    """
 
     def p_losses(self, x_start, cond, target, t):
         noise = torch.randn_like(x_start)
