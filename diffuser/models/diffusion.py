@@ -76,16 +76,22 @@ class GaussianDiffusion(nn.Module):
         self.model = model
 
         betas = cosine_beta_schedule(n_timesteps)
+        # alphas 是 betas 的补集,决定了每一步扩散中保留原始状态的比例
         alphas = 1. - betas
         alphas_cumprod = torch.cumprod(alphas, axis=0)
         alphas_cumprod_prev = torch.cat([torch.ones(1), alphas_cumprod[:-1]])
 
         self.n_timesteps = int(n_timesteps)
         self.clip_denoised = clip_denoised
+        # 当 predict_epsilon 设置为 True 时，模型被训练来直接预测每一步扩散中添加的噪声
+        # 当 predict_epsilon 设置为 False 时，模型被训练来预测去噪后的状态，即直接预测原始数据
         self.predict_epsilon = predict_epsilon
 
+        # betas表示扩散过程中的方差增加项，用于控制噪声的引入速度
         self.register_buffer('betas', betas)
+        # alphas_cumprod 是 alphas 的累积乘积，反映了在扩散过程中保留了多少原始信息
         self.register_buffer('alphas_cumprod', alphas_cumprod)
+        # alphas_cumprod_prev 是前一步的alphas_cumprod，用于计算后验分布q(x_{t-1} | x_t, x_0)
         self.register_buffer('alphas_cumprod_prev', alphas_cumprod_prev)
 
         # calculations for diffusion q(x_t | x_{t-1}) and others
@@ -130,11 +136,13 @@ class GaussianDiffusion(nn.Module):
         ## set loss coefficients for dimensions of observation
         if weights_dict is None: weights_dict = {}
         for ind, w in weights_dict.items():
+            # transition_dim = observation_dim + action_dim
             dim_weights[self.action_dim + ind] *= w
 
         ## decay loss with trajectory timestep: discount**t
         discounts = discount ** torch.arange(self.horizon, dtype=torch.float)
         discounts = discounts / discounts.mean()
+        # 将结果缩并成一个形状为 (horizon, transition_dim) 的张量
         loss_weights = torch.einsum('h,t->ht', discounts, dim_weights)
 
         ## manually set a0 weight
@@ -145,8 +153,17 @@ class GaussianDiffusion(nn.Module):
 
     def predict_start_from_noise(self, x_t, t, noise):
         '''
+            Predicts the starting point from noise based on the predict_epsilon flag.
             if self.predict_epsilon, model output is (scaled) noise;
-            otherwise, model predicts x0 directly
+            otherwise, model predicts x0 directly.
+
+            Args:
+                x_t (torch.Tensor): The current noisy state.
+                t (torch.Tensor): The current time step.
+                noise (torch.Tensor): The predicted noise.
+
+            Returns:
+                torch.Tensor: The predicted starting point.
         '''
         if self.predict_epsilon:
             return (
@@ -157,6 +174,17 @@ class GaussianDiffusion(nn.Module):
             return noise
 
     def q_posterior(self, x_start, x_t, t):
+        """
+        Computes the posterior mean, variance, and log variance.
+
+        Args:
+            x_start (torch.Tensor): The initial state.
+            x_t (torch.Tensor): The current state.
+            t (torch.Tensor): The current time step.
+
+        Returns:
+            tuple: A tuple containing the posterior mean, variance, and log variance.
+        """
         posterior_mean = (
             extract(self.posterior_mean_coef1, t, x_t.shape) * x_start +
             extract(self.posterior_mean_coef2, t, x_t.shape) * x_t
@@ -166,6 +194,17 @@ class GaussianDiffusion(nn.Module):
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
     def p_mean_variance(self, x, cond, t):
+        """
+        Computes the mean and variance of the predicted distribution.
+
+        Args:
+            x (torch.Tensor): The current state.
+            cond (tuple): The conditions for the diffusion.
+            t (torch.Tensor): The current time step.
+
+        Returns:
+            tuple: A tuple containing the model mean, posterior variance, and log variance.
+        """
         x_recon = self.predict_start_from_noise(x, t=t, noise=self.model(x, cond, t))
 
         if self.clip_denoised:
@@ -178,7 +217,23 @@ class GaussianDiffusion(nn.Module):
         return model_mean, posterior_variance, posterior_log_variance
 
     @torch.no_grad()
-    def p_sample_loop(self, shape, cond, verbose=True, return_chain=False, sample_fn=default_sample_fn, **sample_kwargs):
+    def p_sample_loop(self, shape, cond, verbose=True, return_chain=False, 
+                      sample_fn=default_sample_fn, **sample_kwargs):
+        """
+        Perform the sampling loop to generate samples from the diffusion model.
+
+        Args:
+            shape (tuple): The shape of the samples to be generated.
+            cond (tuple): The conditions for the diffusion sampling.
+            verbose (bool): Whether to display the sampling progress.
+            return_chain (bool): Whether to return the entire sampling chain.
+            sample_fn (function): The function to use for sampling at each step.
+            **sample_kwargs: Additional keyword arguments for the sample_fn.
+
+        Returns:
+            Sample: A namedtuple containing the final sampled data, associated values, 
+            and optionally the sampling chain.
+        """
         device = self.betas.device
 
         batch_size = shape[0]
@@ -217,6 +272,17 @@ class GaussianDiffusion(nn.Module):
     #------------------------------------------ training ------------------------------------------#
 
     def q_sample(self, x_start, t, noise=None):
+        """
+        Forward diffusion process(add noise).
+
+        Args:
+            x_start (torch.Tensor): The initial state.
+            t (torch.Tensor): The current time step.
+            noise (torch.Tensor): The noise to be added.
+
+        Returns:
+            torch.Tensor: The sampled state at time t.
+        """
         if noise is None:
             noise = torch.randn_like(x_start)
 
@@ -228,6 +294,17 @@ class GaussianDiffusion(nn.Module):
         return sample
 
     def p_losses(self, x_start, cond, t):
+        """
+        Computes the losses for the diffusion model.
+
+        Args:
+            x_start (torch.Tensor): The initial state.
+            cond (tuple): The conditions for the diffusion.
+            t (torch.Tensor): The current time step.
+
+        Returns:
+            tuple: A tuple containing the loss and additional information.
+        """
         noise = torch.randn_like(x_start)
 
         x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
@@ -246,11 +323,32 @@ class GaussianDiffusion(nn.Module):
         return loss, info
 
     def loss(self, x, *args):
+        """
+        Computes the loss for a batch of data.
+
+        Args:
+            x (torch.Tensor): The batch of data.
+            *args: Additional arguments for the loss computation.
+
+        Returns:
+            torch.Tensor: The computed loss.
+        """
         batch_size = len(x)
         t = torch.randint(0, self.n_timesteps, (batch_size,), device=x.device).long()
         return self.p_losses(x, *args, t)
 
     def forward(self, cond, *args, **kwargs):
+        """
+        Performs the forward denoise pass of the diffusion model.
+
+        Args:
+            cond (tuple): The conditions for the diffusion sampling.
+            *args: Additional arguments for the forward pass.
+            **kwargs: Additional keyword arguments for the forward pass.
+
+        Returns:
+            Sample: A namedtuple containing the sampled data and associated values.
+        """
         return self.conditional_sample(cond, *args, **kwargs)
 
 
